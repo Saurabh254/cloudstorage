@@ -38,6 +38,7 @@ class S3Driver(Driver):
 
         from cloudstorage.drivers.amazon import S3Driver
 
+
         storage = S3Driver(key='<my-aws-access-key-id>',
                    secret='<my-aws-secret-access-key>',
                    region='us-east-1')
