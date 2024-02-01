@@ -44,7 +44,7 @@ Usage
 .. code-block:: python
 
     >>> from cloudstorage.drivers.amazon import S3Driver
-    >>> storage = S3Driver(key='<my-aws-access-key-id>', secret='<my-aws-secret-access-key>')
+    >>> storage = S3Driver(key='<my-aws-access-key-id>', secret='<my-aws-secret-access-key>', endpoint_url='<my-custom-endpoint-url>')
 
     >>> container = storage.create_container('avatars')
     >>> container.cdn_url

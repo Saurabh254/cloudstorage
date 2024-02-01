@@ -1,6 +1,6 @@
 """Amazon Simple Storage Service (S3) Driver."""
 import logging
-from typing import Any, Dict, Iterable, List, TYPE_CHECKING  # noqa: F401
+from typing import Any, Dict, Iterable, List, TYPE_CHECKING, Union  # noqa: F401
 from urllib.parse import quote, urljoin
 
 import boto3
@@ -65,10 +65,14 @@ class S3Driver(Driver):
 
     name = "S3"
     hash_type = "md5"
-    url = "https://aws.amazon.com/s3/"
 
     def __init__(
-        self, key: str, secret: str = None, region: str = "us-east-1", **kwargs: Dict
+        self,
+        key: str,
+        secret: str = None,
+        region: str = "us-east-1",
+        endpoint_url: str = "https://aws.amazon.com/s3/",
+        **kwargs: Dict,
     ) -> None:
         region = region.lower()
         super().__init__(key=key, secret=secret, region=region, **kwargs)
@@ -76,7 +80,8 @@ class S3Driver(Driver):
         self._session = boto3.Session(
             aws_access_key_id=key, aws_secret_access_key=secret, region_name=region
         )
-
+        self.url = endpoint_url
+        self.client = self._session.client("s3", endpoint_url=self.url)
         # session required for loading regions list
         if region not in self.regions:
             raise CloudStorageError(messages.REGION_NOT_FOUND % region)
@@ -127,7 +132,7 @@ class S3Driver(Driver):
 
         if validate:
             try:
-                response = self.s3.meta.client.head_bucket(Bucket=bucket_name)
+                response = self.client.head_bucket(Bucket=bucket_name)
                 logger.debug("response=%s", response)
             except ClientError as err:
                 error_code = int(err.response["Error"]["Code"])
@@ -254,11 +259,13 @@ class S3Driver(Driver):
         :return: The s3 resource instance.
         :rtype: :class:`boto3.resources.base.ServiceResource`
         """
-        return self.session.resource(service_name="s3", region_name=self.region)
+        return self.session.resource(
+            service_name="s3", region_name=self.region, endpoint_url=self.url
+        )
 
     def validate_credentials(self) -> None:
         try:
-            self.session.client("sts").get_caller_identity()
+            self.session.client("sts", endpoint_url=self.url).get_caller_identity()
         except ClientError as err:
             raise CredentialsError(str(err))
 
@@ -317,7 +324,7 @@ class S3Driver(Driver):
 
     def container_cdn_url(self, container: Container) -> str:
         bucket = self._get_bucket(container.name, validate=False)
-        endpoint_url = bucket.meta.client.meta.endpoint_url
+        endpoint_url = self.client.meta.endpoint_url
         return "%s/%s" % (endpoint_url, container.name)
 
     def enable_container_cdn(self, container: Container) -> bool:
@@ -420,7 +427,7 @@ class S3Driver(Driver):
         logger.debug("params=%s", params)
 
         try:
-            response = self.s3.meta.client.delete_object(**params)
+            response = self.client.delete_object(**params)
             logger.debug("response=%s", response)
         except ClientError as err:
             error_code = int(err.response["Error"]["Code"])
@@ -440,7 +447,7 @@ class S3Driver(Driver):
 
     def generate_container_upload_url(
         self,
-        container: Container,
+        container: Union[Container, str],
         blob_name: str,
         expires: int = 3600,
         acl: str = None,
@@ -489,8 +496,8 @@ class S3Driver(Driver):
             fields[extra_name] = extra_value
             conditions.append({extra_name: extra_value})
 
-        return self.s3.meta.client.generate_presigned_post(
-            Bucket=container.name,
+        return self.client.generate_presigned_post(
+            Bucket=(container.name if type(container) != str else container),
             Key=blob_name,
             Fields=fields,
             Conditions=conditions,
@@ -517,7 +524,7 @@ class S3Driver(Driver):
             params["ResponseContentDisposition"] = content_disposition
 
         logger.debug("params=%s", params)
-        return self.s3.meta.client.generate_presigned_url(
+        return self.client.generate_presigned_url(
             ClientMethod="get_object",
             Params=params,
             ExpiresIn=int(expires),
